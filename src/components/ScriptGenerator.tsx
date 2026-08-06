@@ -98,7 +98,7 @@ export const ScriptGenerator: React.FC<ScriptGeneratorProps> = ({
 }) => {
   const [framework, setFramework] = useState<FrameworkType>('framework_a');
   const [engine, setEngine] = useState<AIEngineType>('claude');
-  const [selectedModel, setSelectedModel] = useState<string>('claude-3-7-sonnet-latest');
+  const [selectedModel, setSelectedModel] = useState<string>('claude-opus-5');
 
   const [topic, setTopic] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Motivational Stories');
@@ -110,6 +110,7 @@ export const ScriptGenerator: React.FC<ScriptGeneratorProps> = ({
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [fallbackWarning, setFallbackWarning] = useState('');
 
   // Build full system prompt sent to AI engine
   const buildPromptText = (
@@ -199,7 +200,7 @@ Return ONLY valid JSON following this exact schema:
   const handleEngineChange = (newEngine: AIEngineType) => {
     setEngine(newEngine);
     if (newEngine === 'claude') {
-      setSelectedModel(modelsConfig.claude[0]?.id || 'claude-3-7-sonnet-latest');
+      setSelectedModel(modelsConfig.claude[0]?.id || 'claude-opus-5');
     } else if (newEngine === 'codex') {
       setSelectedModel(modelsConfig.codex[0]?.id || '');
     } else {
@@ -221,6 +222,7 @@ Return ONLY valid JSON following this exact schema:
     e.preventDefault();
     setIsGenerating(true);
     setErrorMsg('');
+    setFallbackWarning('');
 
     try {
       const res = await fetch('/api/generate', {
@@ -240,6 +242,12 @@ Return ONLY valid JSON following this exact schema:
 
       const json = await res.json();
       if (json.success && json.data) {
+        if (json.isFallback) {
+          setFallbackWarning(
+            json.fallbackReason || 'The AI engine was unavailable, so a built-in template was used.'
+          );
+        }
+
         const generatedScript: ScriptData = {
           ...json.data,
           id: `script_${Date.now()}`,
@@ -661,6 +669,17 @@ Return ONLY valid JSON following this exact schema:
         {errorMsg && (
           <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
             {errorMsg}
+          </div>
+        )}
+
+        {fallbackWarning && (
+          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm space-y-1">
+            <p className="font-bold">⚠ Template script — not AI generated</p>
+            <p className="text-amber-200/80 text-xs">{fallbackWarning}</p>
+            <p className="text-amber-200/60 text-xs">
+              Only the hook line uses your topic; the remaining beats are fixed placeholder copy.
+              Pick a different model or engine and generate again for a real script.
+            </p>
           </div>
         )}
 

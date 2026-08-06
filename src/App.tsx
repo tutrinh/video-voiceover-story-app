@@ -24,11 +24,11 @@ export function App() {
     codex: ModelOption[];
   }>({
     claude: [
-      { id: 'claude-3-7-sonnet-latest', name: 'Claude 3.7 Sonnet (Latest)', default: true },
-      { id: 'claude-3-5-sonnet-latest', name: 'Claude 3.5 Sonnet' },
-      { id: 'claude-3-5-haiku-latest', name: 'Claude 3.5 Haiku (Fast)' },
-      { id: 'sonnet', name: 'Claude Sonnet' },
-      { id: 'opus', name: 'Claude Opus (Pro)' },
+      { id: 'claude-opus-5', name: 'Claude Opus 5 (Most Capable)', default: true },
+      { id: 'claude-sonnet-5', name: 'Claude Sonnet 5 (Balanced)' },
+      { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5 (Fast)' },
+      { id: 'opus', name: 'Claude Opus (CLI alias)' },
+      { id: 'sonnet', name: 'Claude Sonnet (CLI alias)' },
     ],
     codex: [
       { id: '', name: 'Codex configured default', default: true },
@@ -36,7 +36,7 @@ export function App() {
   });
 
   const [activeEngine, setActiveEngine] = useState<AIEngineType>('claude');
-  const [activeModel, setActiveModel] = useState<string>('claude-3-7-sonnet-latest');
+  const [activeModel, setActiveModel] = useState<string>('claude-opus-5');
 
   // Check Backend CLI Health & Seed Initial Topics to IndexedDB
   useEffect(() => {

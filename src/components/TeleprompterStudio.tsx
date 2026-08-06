@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Play,
   Pause,
@@ -16,7 +16,9 @@ import {
   ChevronRight,
   Sparkles,
   Music,
-  ListMusic
+  ListMusic,
+  Copy,
+  Check
 } from 'lucide-react';
 import { ScriptData, VoiceTake, SavedStory } from '../types/script';
 import { downloadSrtFile } from '../utils/srtExporter';
@@ -25,6 +27,16 @@ interface TeleprompterStudioProps {
   script: ScriptData;
   onSaveStory?: (story: SavedStory) => void;
 }
+
+// Single source of truth for the readable script text, shared by the editable
+// textarea and the TXT export so the two can never drift apart.
+const buildScriptText = (script: ScriptData) =>
+  script.beats
+    .map(
+      (b) =>
+        `[${b.header}]\n${b.text}\nVisual Cue: ${b.visualCue}\nDelivery Tip: ${b.deliveryTip}\n`
+    )
+    .join('\n---\n\n');
 
 export const TeleprompterStudio: React.FC<TeleprompterStudioProps> = ({
   script,
@@ -51,6 +63,11 @@ export const TeleprompterStudio: React.FC<TeleprompterStudioProps> = ({
   const [audioDuration, setAudioDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1.0);
 
+  // AI Generated Script Text State
+  const generatedScriptText = useMemo(() => buildScriptText(script), [script]);
+  const [scriptDraft, setScriptDraft] = useState(generatedScriptText);
+  const [isScriptCopied, setIsScriptCopied] = useState(false);
+
   // Refs
   const prompterContainerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -66,6 +83,22 @@ export const TeleprompterStudio: React.FC<TeleprompterStudioProps> = ({
   useEffect(() => {
     checkMicPermissions();
   }, []);
+
+  // Reset the prompter whenever a different script is loaded, otherwise the new
+  // script opens at the previous script's beat and scroll offset.
+  useEffect(() => {
+    setIsPlayingPrompter(false);
+    setActiveBeatIndex(0);
+    if (prompterContainerRef.current) {
+      prompterContainerRef.current.scrollTop = 0;
+    }
+  }, [script.id]);
+
+  // Refill the editable textarea whenever a newly generated script arrives
+  useEffect(() => {
+    setScriptDraft(generatedScriptText);
+    setIsScriptCopied(false);
+  }, [generatedScriptText]);
 
   const checkMicPermissions = async () => {
     try {
@@ -283,8 +316,8 @@ export const TeleprompterStudio: React.FC<TeleprompterStudioProps> = ({
   };
 
   const handleDownloadTxtScript = () => {
-    const scriptText = script.beats.map((b) => `[${b.header}]\n${b.text}\nVisual Cue: ${b.visualCue}\nDelivery Tip: ${b.deliveryTip}\n`).join('\n---\n\n');
-    const blob = new Blob([scriptText], { type: 'text/plain' });
+    // Export what the user currently sees in the script textarea, edits included
+    const blob = new Blob([scriptDraft], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -548,6 +581,78 @@ export const TeleprompterStudio: React.FC<TeleprompterStudioProps> = ({
                     <span>Stop Take</span>
                   </button>
                 </>
+              )}
+            </div>
+          </div>
+
+          {/* AI Generated Script Textarea */}
+          <div className="metronic-card p-5 space-y-3">
+            <div className="flex items-center justify-between border-b border-[#2b2d3c] pb-3">
+              <div className="flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-[#7239ea]" />
+                <h3 className="font-bold text-sm text-white uppercase tracking-wider">
+                  AI Generated Script
+                </h3>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setScriptDraft(generatedScriptText)}
+                  disabled={scriptDraft === generatedScriptText}
+                  className="metronic-btn-secondary py-1 px-2.5 text-xs flex items-center space-x-1 hover:text-[#7239ea] disabled:opacity-40"
+                  title="Restore the original AI generated script"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(scriptDraft);
+                    setIsScriptCopied(true);
+                    setTimeout(() => setIsScriptCopied(false), 2000);
+                  }}
+                  className="metronic-btn-secondary py-1 px-2.5 text-xs flex items-center space-x-1 hover:text-[#00d27a]"
+                  title="Copy the script to clipboard"
+                >
+                  {isScriptCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#9a9cae]">
+              Full script returned by{' '}
+              <span className="text-[#b58dff] font-medium">{script.engineUsed}</span>. Edit it here
+              to shape your TXT export — the prompter above keeps showing the original beats.
+            </p>
+
+            <textarea
+              value={scriptDraft}
+              onChange={(e) => setScriptDraft(e.target.value)}
+              rows={14}
+              spellCheck={false}
+              className="metronic-input w-full font-mono text-xs text-[#E1E3EA] leading-relaxed bg-[#0f1015] border-[#2b2d3c] p-4 rounded-xl focus:border-[#7239ea] resize-y"
+              placeholder="AI generated script..."
+            />
+
+            <div className="flex items-center justify-between text-[11px] text-[#6c7086]">
+              <span>
+                {script.beats.length} beats • {scriptDraft.trim().split(/\s+/).filter(Boolean).length} words
+              </span>
+              {scriptDraft !== generatedScriptText && (
+                <span className="text-amber-400 font-semibold">Edited (unsaved)</span>
               )}
             </div>
           </div>

@@ -38,12 +38,13 @@ function runCliWithInput(command, args, input) {
     child.on('error', reject);
 
     child.on('close', (code) => {
-      if (stdout.trim().length > 0) {
-        resolve(stdout);
-      } else if (code === 0) {
+      // A failing CLI still writes to stdout (e.g. "issue with the selected model"),
+      // so exit code is the only reliable success signal. Resolving on stdout alone
+      // silently turned CLI errors into unparseable output and a fallback script.
+      if (code === 0) {
         resolve(stdout);
       } else {
-        reject(new Error(`CLI exit code ${code}: ${stderr}`));
+        reject(new Error(`CLI exit code ${code}: ${stderr.trim() || stdout.trim()}`));
       }
     });
 
@@ -65,11 +66,11 @@ app.get('/api/health', async (req, res) => {
     codexAvailable,
     models: {
       claude: [
-        { id: 'claude-3-7-sonnet-latest', name: 'Claude 3.7 Sonnet (Latest)', default: true },
-        { id: 'claude-3-5-sonnet-latest', name: 'Claude 3.5 Sonnet' },
-        { id: 'claude-3-5-haiku-latest', name: 'Claude 3.5 Haiku (Fast)' },
-        { id: 'sonnet', name: 'Claude Sonnet' },
-        { id: 'opus', name: 'Claude Opus (Pro)' }
+        { id: 'claude-opus-5', name: 'Claude Opus 5 (Most Capable)', default: true },
+        { id: 'claude-sonnet-5', name: 'Claude Sonnet 5 (Balanced)' },
+        { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5 (Fast)' },
+        { id: 'opus', name: 'Claude Opus (CLI alias)' },
+        { id: 'sonnet', name: 'Claude Sonnet (CLI alias)' }
       ],
       codex: [
         { id: '', name: 'Codex configured default', default: true }
@@ -93,7 +94,7 @@ app.post('/api/generate', async (req, res) => {
 
   const requestedModel = engine === 'codex'
     ? ''
-    : model || (engine === 'claude' ? 'claude-3-7-sonnet-latest' : 'Web Intelligent Emulator');
+    : model || (engine === 'claude' ? 'claude-opus-5' : 'Web Intelligent Emulator');
   const modelUsed = requestedModel || 'Codex configured default';
 
   console.log(`[Script Gen] Engine: ${engine}, Model: ${modelUsed}, Framework: ${framework}, Duration: ${duration}s`);
@@ -158,6 +159,10 @@ Return ONLY valid JSON with no markdown wrapping or text before/after. The JSON 
   ]
 }`;
 
+  // Why the AI CLI was not used, surfaced to the client so a template script is
+  // never mistaken for a generated one
+  let fallbackReason = '';
+
   try {
     let outputText = '';
 
@@ -178,13 +183,33 @@ Return ONLY valid JSON with no markdown wrapping or text before/after. The JSON 
     if (scriptData && scriptData.beats && Array.isArray(scriptData.beats)) {
       return res.json({ success: true, engine, model: modelUsed, data: scriptData });
     }
+
+    fallbackReason = engine === 'web'
+      ? 'Browser AI Engine selected — no CLI is invoked, so a built-in template is used.'
+      : `${engine} CLI ran but did not return parseable JSON.`;
   } catch (err) {
+    fallbackReason = `${engine} CLI failed: ${err?.message || err}`;
     console.warn(`[CLI Execution Warning] Engine '${engine}' call encountered issue:`, err?.message || err);
   }
 
+  console.warn(`[Fallback] Serving template script. Reason: ${fallbackReason}`);
+
   // Fallback high quality topic-specific AI generator
-  const fallbackData = generateFallbackScript({ topic, audience, tone, duration, isFrameworkA });
-  return res.json({ success: true, engine: `${engine} (Authentic Engine)`, model: modelUsed, data: fallbackData });
+  try {
+    const fallbackData = generateFallbackScript({ topic, audience, tone, duration, isFrameworkA });
+    return res.json({
+      success: true,
+      engine: 'Offline Template',
+      model: 'built-in template (no AI)',
+      isFallback: true,
+      fallbackReason,
+      data: fallbackData,
+    });
+  } catch (err) {
+    // Never let an internal error hang or kill the request: the client needs a JSON reply
+    console.error('[Fallback Generator Error]', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Fallback generation failed' });
+  }
 });
 
 function parseJsonFromText(text) {
@@ -218,31 +243,31 @@ function generateFallbackScript({ topic, audience, tone, duration, isFrameworkA 
 
   if (lower.includes('walk') || lower.includes('evening') || lower.includes('step')) {
     setupText = `Every evening at 7 PM, I leave my phone on the desk and take a short 10-minute walk outside.`;
-    strugglingText = `Before this habit, my brain was constantly buzzing with unread notifications and endless to-do lists.`;
+    struggleText = `Before this habit, my brain was constantly buzzing with unread notifications and endless to-do lists.`;
     journeyText = `During the first 3 minutes of walking in silence, my mind naturally decompresses and untangles complex thoughts.`;
     resolutionText = `By the time I step back inside, the anxiety is completely gone, leaving me energized and deeply present.`;
     ctaText = `Try a 10-minute walk tonight, save this reminder, and let me know how it felt in the comments below!`;
   } else if (lower.includes('key') || lower.includes('mindful') || lower.includes('lose')) {
     setupText = `I lost my house keys 3 separate times in a single week because I was rushing out the door on autopilot.`;
-    strugglingText = `Each time, I spent 20 minutes frantically tearing apart my couch cushions while my heart rate spiked.`;
+    struggleText = `Each time, I spent 20 minutes frantically tearing apart my couch cushions while my heart rate spiked.`;
     journeyText = `I decided to place a small ceramic bowl right beside the front door and forced myself to pause for 2 seconds every time I set down my keys.`;
     resolutionText = `That tiny 2-second pause solved the entire problem: I haven't lost my keys once in 6 months, and I started my days in total calm.`;
     ctaText = `Save this simple daily mindfulness tip, and tell me: what object do you lose most often?`;
   } else if (lower.includes('overthink') || lower.includes('decision') || lower.includes('thought')) {
     setupText = `For years, I would spend days agonizing over simple decisions, second-guessing every choice I made.`;
-    strugglingText = `It created massive decision fatigue, paralyzing my progress and draining all my energy before lunch.`;
+    struggleText = `It created massive decision fatigue, paralyzing my progress and draining all my energy before lunch.`;
     journeyText = `I started implementing the 2-minute decision rule: if a choice takes under 2 minutes, I decide immediately and move forward.`;
     resolutionText = `This rule eliminated the overthinking trap completely, unlocking hours of productive energy every single day.`;
     ctaText = `If overthinking is holding you back, hit save and share this rule with a friend who needs it!`;
   } else if (lower.includes('busy') || lower.includes('time') || lower.includes('schedule')) {
     setupText = `I used to wear "being busy" like a badge of honor, telling everyone I didn't have a spare minute.`;
-    strugglingText = `The problem was that being busy wasn't the same as being effective; I was just running on a hamster wheel.`;
+    struggleText = `The problem was that being busy wasn't the same as being effective; I was just running on a hamster wheel.`;
     journeyText = `I audited my calendar and cut out 3 non-essential tasks that were draining my focus without adding real value.`;
     resolutionText = `The resolution was immediate: I gained back 2 hours of quiet time every afternoon while actually doubling my output.`;
     ctaText = `Save this reel as a reminder to audit your schedule today, and drop your thoughts in the comments!`;
   } else if (lower.includes('courage') || lower.includes('fear') || lower.includes('confidence')) {
     setupText = `I spent months holding back from posting videos because I was terrified of what people might think.`;
-    strugglingText = `The fear of judgment kept me stuck in place while watching others build their dream projects.`;
+    struggleText = `The fear of judgment kept me stuck in place while watching others build their dream projects.`;
     journeyText = `I committed to 5 minutes of daily courage: turning on the camera and recording 1 honest take without over-editing.`;
     resolutionText = `That small daily act of courage destroyed the fear completely, replacing awkwardness with authentic confidence on camera.`;
     ctaText = `Hit save to claim your 5 minutes of courage today, and tag a creator friend who needs this push!`;
@@ -368,6 +393,12 @@ function generateFallbackScript({ topic, audience, tone, duration, isFrameworkA 
     };
   }
 }
+
+// Express 4 does not catch rejections from async handlers, and Node exits on an
+// unhandled rejection. Keep the server alive so one bad request cannot take it down.
+process.on('unhandledRejection', (err) => {
+  console.error('[Unhandled Rejection]', err);
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Metronic AI Reel Backend Server running at http://localhost:${PORT}`);
