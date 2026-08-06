@@ -90,6 +90,23 @@ npm run preview       # Preview the production frontend build
 
 For AI generation during development, use `npm run dev` so both the frontend and backend are running.
 
+## Desktop launcher (macOS)
+
+To start the app by double-clicking an icon instead of opening a terminal, build the launcher once:
+
+```bash
+./scripts/launcher/make-launcher.sh
+```
+
+This creates two apps on your Desktop:
+
+- **Voiceover Story Studio** — starts the frontend and backend, waits for them to be ready, then opens `http://localhost:5173` in your browser. It runs `npm install` first if `node_modules` is missing, and just reopens the browser if the servers are already running.
+- **Stop Voiceover Studio** — shuts both servers down.
+
+The launcher finds Node on its own (Homebrew or nvm), since apps opened from Finder do not inherit your shell `PATH`. Startup output is logged to `.launcher/launcher.log`; if anything fails you get a dialog with a **Show Log** button.
+
+Pass a different destination to install the apps elsewhere, for example `./scripts/launcher/make-launcher.sh /Applications`. The project path is baked into the apps, so re-run the script after moving or renaming the project folder.
+
 ## How to use
 
 ### 1. Generate a script
