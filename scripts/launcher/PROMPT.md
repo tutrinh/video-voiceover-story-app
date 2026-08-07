@@ -31,8 +31,10 @@ a companion app that stops it. Requirements:
 - Log startup output to .launcher/launcher.log (append, don't truncate while the
   running server still holds the file open). On failure show an osascript dialog
   with a "Show Log" button that opens the log in Console.
-- Set LSUIElement so the launchers don't leave a dock icon, and ad-hoc codesign
-  the bundles.
+- Do NOT set LSUIElement — it marks the bundle as a background agent and keeps
+  it out of the Dock, so the app can't be pinned there. The launcher exits on
+  its own after opening the browser, so there's no lingering icon to suppress.
+  Ad-hoc codesign the bundles.
 - Give each app a custom icon: an SVG in the repo rendered to a multi-resolution
   .icns via iconutil, using rsvg-convert / magick / cairosvg — whichever exists —
   and skip the icon gracefully if none do.
@@ -64,8 +66,11 @@ scripts. Test it end to end: cold start, relaunch while running, and stop.
 - **Append-only logging** matters because the running dev server holds the log
   file open; truncating it on relaunch throws away the output you need when
   something breaks.
-- **LSUIElement** keeps a shell-script bundle from parking a dead icon in the
-  dock, since it can't respond to a Quit event anyway.
+- **Skipping LSUIElement** is what makes the app pinnable to the Dock. It's
+  tempting to set it so a shell-script bundle can't park a dead icon there, but
+  a launcher that exits after opening the browser never parks one anyway — and
+  the flag makes macOS treat the bundle as a background agent that the Dock
+  refuses to keep.
 
 ## Faster alternative
 
